@@ -1,0 +1,7 @@
+myenv
+FedDL/client1_fit.pickle
+FedDL/client1.pickle
+FedDL/client2.pickle
+FedDL/my_dataset.pickle
+FedCL/tb_data
+FedCL/fedCL
