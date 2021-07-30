@@ -13,7 +13,7 @@ import torch.optim
 from avalanche.benchmarks.utils import avalanche_dataset
 from avalanche.benchmarks.classic.cmnist import SplitMNIST
 from avalanche.benchmarks.datasets import MNIST
-from avalanche.training.strategies import EWC, Naive
+from avalanche.training.strategies import EWC, Naive, Replay
 from avalanche.evaluation.metrics import forgetting_metrics, \
 accuracy_metrics, loss_metrics
 from avalanche.training.plugins import EvaluationPlugin
@@ -27,24 +27,23 @@ first_split_mnist = SplitMNIST(n_experiences=5, fixed_class_order=[0,1, 2 , 3, 4
 first_train_stream = first_split_mnist.train_stream
 first_test_stream = first_split_mnist.test_stream
 
-second_split_mnist = SplitMNIST(n_experiences=5, fixed_class_order=[5,6, 7 , 8, 9], return_task_id=True, shuffle=True, train_transform=torchvision.transforms.ToTensor(), eval_transform=torchvision.transforms.ToTensor())
+split_mnist = SplitMNIST(n_experiences=5, return_task_id=True, shuffle=True, eval_transform=torchvision.transforms.ToTensor())
+full_mnist = split_mnist.test_stream
 
-second_train_stream = second_split_mnist.train_stream
-second_test_stream = second_split_mnist.test_stream
-for exp in first_train_stream:
-    t = exp.task_label
-    exp_id = exp.current_experience
-    task_train_ds = exp.dataset
-    print('Task {} batch {} -> train'.format(t, exp_id))
-    print('This batch contains', len(task_train_ds), 'patterns')
+# for exp in first_train_stream:
+#     t = exp.task_label
+#     exp_id = exp.current_experience
+#     task_train_ds = exp.dataset
+#     print('Task {} batch {} -> train'.format(t, exp_id))
+#     print('This batch contains', len(task_train_ds), 'patterns')
 
 
-for exp in first_test_stream:
-    t = exp.task_label
-    exp_id = exp.current_experience
-    task_train_ds = exp.dataset
-    print('Task {} batch {} -> test'.format(t, exp_id))
-    print('This batch contains', len(task_train_ds), 'patterns')
+# for exp in first_test_stream:
+#     t = exp.task_label
+#     exp_id = exp.current_experience
+#     task_train_ds = exp.dataset
+#     print('Task {} batch {} -> test'.format(t, exp_id))
+#     print('This batch contains', len(task_train_ds), 'patterns')
 
 tb1_logger = TensorboardLogger()
 int_logger = InteractiveLogger()
@@ -82,23 +81,33 @@ model = MnistCNN()
 opt = torch.optim.Adam(model.parameters(), lr=0.001)
 criterion = torch.nn.CrossEntropyLoss()
 
-cl_strategy = Naive(
+naive_strategy = Naive(
     model, opt, criterion, train_mb_size=100, train_epochs=5,
     eval_mb_size=100, device=device, evaluator=eval_plugin
 )
 
-def train(model, train_stream):
+replay_strategy =  Replay(
+    model, opt, criterion, train_mb_size=100, train_epochs=5,
+    eval_mb_size=100, device=device, evaluator=eval_plugin
+)
+
+ewc_strategy = EWC(
+    model, opt, criterion, ewc_lambda=0.4, train_mb_size=100, train_epochs=5, keep_importance_data=True,
+    eval_mb_size=100, device=device, evaluator=eval_plugin
+)
+
+def train(model, train_stream, strategy):
     for train_task in train_stream:
         data = train_task.dataset
-        cl_strategy.train(train_task)
-        print(cl_strategy.eval(first_test_stream))
+        strategy.train(train_task)
+        print(strategy.eval(first_test_stream))
     return len(data)
 
-def test(model, test_stream):
+def test(model, test_stream, strategy):
     results = []
     for test_task in test_stream:
         data = test_task.dataset
-        results.append(cl_strategy.eval(test_stream))
+        results.append(strategy.eval(test_stream))
         print(results)
         return len(data), results
 
@@ -113,14 +122,14 @@ class MnistClient(fl.client.NumPyClient):
     
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        data = train(model=model, train_stream=first_train_stream)
+        data = train(model=model, train_stream=first_train_stream, strategy=ewc_strategy)
         return self.get_parameters(), data, {}
     
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
-        data, results= test(model=model, test_stream=first_test_stream)
-        return float(results[0]['Loss_Epoch/train_phase/train_stream/Task004']), \
-             data, {'accuracy':results[0]['Top1_Acc_Epoch/train_phase/train_stream/Task004']}
+        data, results= test(model=model, test_stream=full_mnist, strategy=ewc_strategy)
+        return float(results[0]['Loss_Stream/eval_phase/test_stream/Task004']), \
+             data, {'accuracy':results[0]['Top1_Acc_Stream/eval_phase/test_stream/Task004']}
 
 
 if __name__ == "__main__":    
