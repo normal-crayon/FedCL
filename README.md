@@ -1,4 +1,7 @@
 # FedCL
+## installation:
+in general, need pytorch, avalanche and tensorflow, but some reqirements were missing. so its best to install via the requirements.txt
+<pre><code>python -m pip install -r requirements.txt</code></pre>
 ## phase 1:
 A simple illustrative project on combination of federated and continual learning using avalanche and flower frameworks
 FedCL - contains two clients with MNIST dataset split in half with first half of classes (0, 1, 2, 3, 4) in one client and the other half in another client. This demonstartes class and task
